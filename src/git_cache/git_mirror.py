@@ -41,8 +41,8 @@ LOG = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 # Pattern to match ssh, git, http[s] and ftp[s]:
-#                                  <proto>      [user@]  <host>  [:port]   <path>
-RE_URL_WITH_PROTO = re.compile(r"([a-zA-Z]+)://([^@]+@)?([^:/]+)(:[0-9]+)?/(.*)")
+#                                  <proto>      [<user>   [:<password>]@] <host>  [:port]   <path>
+RE_URL_WITH_PROTO = re.compile(r"([a-zA-Z]+)://(?:([^/:@]*)(?::([^@]*))?@)?([^:/]+)(:[0-9]+)?/(.*)")
 
 # Pattern to match scp-like syntax:  [user@]  <host>       <path>
 RE_URL_WITHOUT_PROTO = re.compile(r"([^@]+@)?([^:/\\]{2,}):(.*)")
@@ -739,14 +739,15 @@ class GitMirror:
             return url
 
         if match := RE_URL_WITH_PROTO.match(url):
-            path = posixpath.normpath(match.group(5))
+            path = posixpath.normpath(match.group(6))
             while path.startswith("../"):
                 path = path[3:]
             while path.endswith("/"):
                 path = path[:-1]
             if path.endswith(".git"):
                 path = path[:-4]
-            return f"{match.group(1)}://{match.group(3)}{match.group(4) or ''}/{path}"
+            creds = f"{match.group(2)}@" if match.group(2) and match.group(1).lower() == "ssh" else ""
+            return f"{match.group(1)}://{creds}{match.group(4)}{match.group(5) or ''}/{path}"
 
         if match := RE_URL_WITHOUT_PROTO.match(url):
             path = posixpath.normpath(match.group(3))
@@ -756,7 +757,7 @@ class GitMirror:
                 path = path[:-1]
             if path.endswith(".git"):
                 path = path[:-4]
-            return f"{match.group(2)}:{path}"
+            return f"{match.group(1) or ''}{match.group(2)}:{path}"
 
         return url
 
@@ -792,11 +793,11 @@ class GitMirror:
             return None
 
         if match := RE_URL_WITH_PROTO.match(url):
-            sub_dir = match.group(3)
-            port = match.group(4)
+            sub_dir = match.group(4)
+            port = match.group(5)
             if port is not None:
                 sub_dir += port.replace(":", "_")
-            path = posixpath.normpath(match.group(5))
+            path = posixpath.normpath(match.group(6))
             while path.startswith("../"):
                 path = path[3:]
             sub_dir += "/" + posixpath.normpath(path)

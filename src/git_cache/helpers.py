@@ -20,8 +20,8 @@ import re
 import shutil
 
 # Pattern to match ssh, git, http[s] and ftp[s]:
-#                                  <proto>      [user@]  <host>  [:port]   <path>
-_RE_URL_WITH_PROTO = re.compile(r"([a-zA-Z]+)://([^@]+@)?([^:/]+)(:[0-9]+)?/(.*)")
+#                                  <proto>      [<user>   [:<password>]@] <host>  [:port]   <path>
+_RE_URL_WITH_PROTO = re.compile(r"([a-zA-Z]+)://(?:([^/:@]*)(?::([^@]*))?@)?([^:/]+)(:[0-9]+)?/(.*)")
 
 # Pattern to match scp-like syntax:  [user@]  <host>       <path>
 _RE_URL_WITHOUT_PROTO = re.compile(r"([^@]+@)?([^:/\\]{2,}):(.*)")
@@ -125,7 +125,7 @@ def strip_credentials(url: str, mask: bool = False) -> str:
 
     Args:
         url (str):   The URL of the repository.
-        mask (bool): If set to True the credentials are replaced with [MASKED].
+        mask (bool): If set to True the removed parts are replaced with [MASKED].
 
     Return:
         Returns the URL without credentials.
@@ -134,12 +134,18 @@ def strip_credentials(url: str, mask: bool = False) -> str:
         return url
 
     if match := _RE_URL_WITH_PROTO.match(url):
-        masked_creds = "[MASKED]@" if match.group(2) and mask else ""
-        return f"{match.group(1)}://{masked_creds}{match.group(3)}{match.group(4) or ''}/{match.group(5)}"
+        proto, user, password, host, port, path = match.groups()
+        if user is None:
+            return url
+        if proto.lower() == "ssh":
+            password_part = ":[MASKED]" if password and mask else ""
+            return f"{proto}://{user}{password_part}@{host}{port or ''}/{path}"
+        return f"{proto}://{'[MASKED]@' if mask else ''}{host}{port or ''}/{path}"
 
     if match := _RE_URL_WITHOUT_PROTO.match(url):
-        masked_creds = "[MASKED]@" if match.group(1) and mask else ""
-        return f"{masked_creds}{match.group(2)}:{match.group(3)}"
+        # For SCP-style URLs (user@host:path), keep the username as-is. The username
+        # is part of the SSH connection specification and required for authentication.
+        return url
 
     return url
 
